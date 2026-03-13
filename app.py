@@ -18,15 +18,36 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+        .stApp h1, .main-title {
+            line-height: 1.2;
+            word-break: break-word;
+        }
+        .help-chip {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            border-radius: 999px;
+            border: 1px solid #cfd4dc;
+            color: #4b5563;
+            font-size: 12px;
+            font-weight: 700;
+            margin-left: 6px;
+            cursor: help;
+            background: #ffffff;
+        }
         .block-container {
-            padding-top: 1.2rem;
-            padding-bottom: 2rem;
+            padding-top: 0.8rem;
+            padding-bottom: 1.5rem;
             max-width: 1450px;
         }
         .main-title {
-            font-size: 2rem;
+            font-size: 2.1rem;
             font-weight: 800;
-            margin-bottom: 0.2rem;
+            margin-bottom: 0.15rem;
+            line-height: 1.15;
+            word-break: break-word;
         }
         .subtitle {
             color: #5f6368;
@@ -48,8 +69,34 @@ st.markdown(
         .small-note {
             color: #6b7280;
             font-size: 0.9rem;
-            margin-top: -0.3rem;
+            margin-top: -0.15rem;
+            margin-bottom: 0.65rem;
+        }
+        .hero-card {
+            background: linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%);
+            border: 1px solid #e5e7eb;
+            border-radius: 18px;
+            padding: 18px 20px;
             margin-bottom: 0.8rem;
+        }
+        .hero-kicker {
+            font-size: 0.82rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: #6b7280;
+            margin-bottom: 0.25rem;
+        }
+        .hero-title {
+            font-size: 1.9rem;
+            font-weight: 800;
+            color: #111827;
+            line-height: 1.15;
+            margin-bottom: 0.35rem;
+        }
+        .hero-meta {
+            color: #4b5563;
+            font-size: 0.96rem;
         }
     </style>
     """,
@@ -373,17 +420,19 @@ def generate_executive_summary(df: pd.DataFrame, colmap: ColumnMap) -> str:
 
 
 st.markdown('<div class="main-title">Oitchau | Análise de Chamados Zendesk</div>', unsafe_allow_html=True)
-st.markdown(
-    '<div class="subtitle">Versão 2, com tratamento do layout real do Zendesk, status padronizado, SLA e KPIs executivos.</div>',
-    unsafe_allow_html=True,
-)
+# subtítulo removido a pedido
 
 with st.sidebar:
     st.header("Configurações")
     cliente = st.text_input("Nome do cliente", value="C.Vale")
+    periodo_analisado = st.text_input("Período analisado", value="Fevereiro/2026")
     uploaded_file = st.file_uploader("Upload do arquivo Zendesk", type=["xlsx", "csv"])
     mostrar_base = st.checkbox("Mostrar base exploratória", value=True)
     top_n = st.slider("Top N para rankings", min_value=5, max_value=15, value=10)
+    st.divider()
+    st.markdown("**Filtros rápidos**")
+    usar_periodo_automatico = st.checkbox("Usar período automático do arquivo", value=True)
+    mostrar_diagnostico = st.checkbox("Mostrar diagnóstico de colunas", value=False)
 
 if not uploaded_file:
     st.info("Faça upload de um arquivo para iniciar a análise.")
@@ -398,17 +447,39 @@ except Exception as e:
 colmap = detect_columns(raw_df)
 df = prepare_dataframe(raw_df, colmap)
 
-with st.expander("Diagnóstico do mapeamento de colunas", expanded=False):
-    mapping_df = pd.DataFrame(
-        {
-            "campo_logico": list(colmap.__dict__.keys()),
-            "coluna_detectada": list(colmap.__dict__.values()),
-        }
-    )
-    st.dataframe(mapping_df, use_container_width=True)
+if usar_periodo_automatico and colmap.created_at and colmap.created_at in df.columns and df[colmap.created_at].notna().any():
+    data_min = df[colmap.created_at].min()
+    data_max = df[colmap.created_at].max()
+    if pd.notna(data_min) and pd.notna(data_max):
+        periodo_exibicao = f"{data_min.strftime('%d/%m/%Y')} a {data_max.strftime('%d/%m/%Y')}"
+    else:
+        periodo_exibicao = periodo_analisado
+else:
+    periodo_exibicao = periodo_analisado
+
+st.markdown(
+    f'''
+    <div class="hero-card">
+        <div class="hero-kicker">Relatório executivo</div>
+        <div class="hero-title">{cliente}</div>
+        <div class="hero-meta"><strong>Período analisado:</strong> {periodo_exibicao}</div>
+    </div>
+    ''',
+    unsafe_allow_html=True,
+)
+
+if mostrar_diagnostico:
+    with st.expander("Diagnóstico do mapeamento de colunas", expanded=False):
+        mapping_df = pd.DataFrame(
+            {
+                "campo_logico": list(colmap.__dict__.keys()),
+                "coluna_detectada": list(colmap.__dict__.values()),
+            }
+        )
+        st.dataframe(mapping_df, use_container_width=True)
 
 with st.expander("Filtros", expanded=True):
-    f1, f2, f3, f4 = st.columns(4)
+    f1, f2, f3, f4, f5 = st.columns(5)
     with f1:
         status_options = sorted(df["status_padronizado"].dropna().unique().tolist())
         status_sel = st.multiselect("Status", status_options, default=status_options)
@@ -421,6 +492,18 @@ with st.expander("Filtros", expanded=True):
     with f4:
         assignee_options = sorted(safe_series(df, colmap.assignee).dropna().unique().tolist())
         assignee_sel = st.multiselect("Responsável", assignee_options, default=assignee_options)
+    with f5:
+        if colmap.created_at and colmap.created_at in df.columns and df[colmap.created_at].notna().any():
+            data_min_filtro = df[colmap.created_at].min().date()
+            data_max_filtro = df[colmap.created_at].max().date()
+            intervalo_datas = st.date_input(
+                "Período do arquivo",
+                value=(data_min_filtro, data_max_filtro),
+                min_value=data_min_filtro,
+                max_value=data_max_filtro,
+            )
+        else:
+            intervalo_datas = None
 
 filtered = df.copy()
 if status_sel:
@@ -431,6 +514,12 @@ if colmap.category and category_sel:
     filtered = filtered[filtered[colmap.category].isin(category_sel)]
 if colmap.assignee and assignee_sel:
     filtered = filtered[filtered[colmap.assignee].isin(assignee_sel)]
+if intervalo_datas and colmap.created_at and colmap.created_at in filtered.columns:
+    if isinstance(intervalo_datas, tuple) and len(intervalo_datas) == 2:
+        data_inicio, data_fim = intervalo_datas
+        filtered = filtered[
+            filtered[colmap.created_at].dt.date.between(data_inicio, data_fim)
+        ]
 
 st.markdown('<div class="section-title">Visão geral</div>', unsafe_allow_html=True)
 
@@ -445,7 +534,7 @@ integration_pct = f"{(filtered['is_integration'].sum() / total) * 100:.1f}%" if 
 question_pct = f"{(filtered['is_question'].sum() / total) * 100:.1f}%" if total else "N/D"
 sla_breached = int(pd.Series(filtered["sla_estourado"]).fillna(False).sum())
 
-m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
+m1, m2, m3, m4, m5, m6, m7 = st.columns(7, gap="small")
 with m1:
     metric_card("Total de chamados", str(total))
 with m2:
@@ -462,7 +551,7 @@ with m7:
     metric_card("% Integração", integration_pct)
 
 st.markdown('<div class="section-title">KPIs executivos</div>', unsafe_allow_html=True)
-k1, k2, k3, k4 = st.columns(4)
+k1, k2, k3, k4 = st.columns(4, gap="small")
 with k1:
     metric_card("% Dúvidas operacionais", question_pct)
 with k2:
@@ -474,7 +563,7 @@ with k4:
 
 left, right = st.columns(2)
 with left:
-    st.markdown('<div class="section-title">Chamados por status</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Chamados por status <span class="help-chip" title="Mostra a distribuição dos tickets por status padronizado, facilitando a leitura entre backlog, hold e tickets concluídos.">?</span></div>', unsafe_allow_html=True)
     status_counts = filtered["status_padronizado"].fillna("Sem status").value_counts()
     fig, ax = plt.subplots(figsize=(8, 4.2))
     status_counts.plot(kind="bar", ax=ax)
@@ -484,7 +573,7 @@ with left:
     st.pyplot(fig)
 
 with right:
-    st.markdown('<div class="section-title">Chamados por categoria</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Chamados por categoria <span class="help-chip" title="Mostra quais categorias concentram mais chamados no período, ajudando a identificar causas raiz e frentes prioritárias de atuação.">?</span></div>', unsafe_allow_html=True)
     if colmap.category and colmap.category in filtered.columns:
         cat_counts = filtered[colmap.category].fillna("Sem categoria").value_counts().head(top_n)
         fig, ax = plt.subplots(figsize=(8, 4.2))
@@ -497,7 +586,7 @@ with right:
 
 left2, right2 = st.columns(2)
 with left2:
-    st.markdown('<div class="section-title">Chamados por tipo</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Chamados por tipo <span class="help-chip" title="Separa os tickets entre bugs, dúvidas operacionais e solicitações, ajudando a entender o perfil da demanda do cliente.">?</span></div>', unsafe_allow_html=True)
     if colmap.type and colmap.type in filtered.columns:
         type_counts = filtered[colmap.type].fillna("Sem tipo").value_counts()
         fig, ax = plt.subplots(figsize=(8, 4.2))
@@ -510,7 +599,7 @@ with left2:
         st.warning("Coluna de tipo não encontrada.")
 
 with right2:
-    st.markdown('<div class="section-title">Aging de resolução</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Aging de resolução <span class="help-chip" title="Agrupa os tickets resolvidos por faixa de tempo de resolução, evidenciando chamados rápidos e casos com maior demora.">?</span></div>', unsafe_allow_html=True)
     aging = filtered["aging_bucket"].value_counts().reindex(["0–1 dia", "2–3 dias", "4–7 dias", "8+ dias"])
     fig, ax = plt.subplots(figsize=(8, 4.2))
     aging.plot(kind="bar", ax=ax)
@@ -520,7 +609,7 @@ with right2:
 
 left3, right3 = st.columns(2)
 with left3:
-    st.markdown('<div class="section-title">Tickets por responsável</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Tickets por responsável <span class="help-chip" title="Mostra a concentração de tickets por responsável, apoiando a leitura de distribuição operacional do atendimento.">?</span></div>', unsafe_allow_html=True)
     if colmap.assignee and colmap.assignee in filtered.columns:
         assignee_counts = filtered[colmap.assignee].fillna("Sem responsável").value_counts().head(top_n)
         fig, ax = plt.subplots(figsize=(8, 4.2))
@@ -532,7 +621,7 @@ with left3:
         st.warning("Coluna de responsável não encontrada.")
 
 with right3:
-    st.markdown('<div class="section-title">Principais assuntos</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Principais assuntos <span class="help-chip" title="Exibe os assuntos mais frequentes do período, útil para detectar temas recorrentes e oportunidades de ação preventiva.">?</span></div>', unsafe_allow_html=True)
     if colmap.subject and colmap.subject in filtered.columns:
         subject_counts = filtered[colmap.subject].fillna("Sem assunto").value_counts().head(top_n)
         fig, ax = plt.subplots(figsize=(8, 4.2))
@@ -543,7 +632,7 @@ with right3:
     else:
         st.warning("Coluna de assunto não encontrada.")
 
-st.markdown('<div class="section-title">Evolução diária de abertura</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">Evolução diária de abertura <span class="help-chip" title="Apresenta a variação diária de tickets abertos no período, ajudando a identificar picos operacionais e eventos concentrados.">?</span></div>', unsafe_allow_html=True)
 if colmap.created_at and colmap.created_at in filtered.columns:
     timeline = (
         filtered.dropna(subset=[colmap.created_at])
@@ -558,7 +647,7 @@ if colmap.created_at and colmap.created_at in filtered.columns:
 else:
     st.warning("Coluna de data de criação não encontrada.")
 
-st.markdown('<div class="section-title">SLA</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">SLA <span class="help-chip" title="Resume o comportamento dos tickets frente ao prazo previsto de atendimento, destacando violações e aderência ao SLA.">?</span></div>', unsafe_allow_html=True)
 s1, s2, s3 = st.columns(3)
 with s1:
     sla_rate = f"{(sla_breached / total) * 100:.1f}%" if total else "N/D"
@@ -570,16 +659,16 @@ with s3:
     within_sla = total - sla_breached if total else 0
     metric_card("Tickets dentro do SLA", str(within_sla))
 
-st.markdown('<div class="section-title">Insights automáticos</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">Insights automáticos <span class="help-chip" title="Síntese textual gerada automaticamente com os principais achados do período, pronta para apoiar apresentações executivas.">?</span></div>', unsafe_allow_html=True)
 for insight in generate_insights(filtered, colmap):
     st.markdown(f'<div class="insight-box">{insight}</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="section-title">Resumo executivo</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">Resumo executivo <span class="help-chip" title="Texto consolidado para usar em relatórios e apresentações ao cliente, resumindo volume, perfil dos chamados e pontos de atenção.">?</span></div>', unsafe_allow_html=True)
 summary_text = generate_executive_summary(filtered, colmap)
 st.text_area("Texto pronto para apresentação", value=summary_text, height=180)
 
 if mostrar_base:
-    st.markdown('<div class="section-title">Base exploratória</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Base exploratória <span class="help-chip" title="Tabela detalhada dos tickets após tratamento e filtros aplicados, útil para validação e análises mais profundas.">?</span></div>', unsafe_allow_html=True)
     st.dataframe(filtered, use_container_width=True, height=420)
 
 export_df = filtered.copy()
