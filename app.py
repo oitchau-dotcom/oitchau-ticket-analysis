@@ -370,7 +370,7 @@ def generate_insights(df: pd.DataFrame, colmap: ColumnMap) -> list[str]:
     mean_resolution = df["tempo_resolucao_dias"].dropna()
     if len(mean_resolution) > 0:
         insights.append(
-            f"O SLA médio é de **{mean_resolution.mean():.1f} dias**, com **{int((mean_resolution > 7).sum())} tickets** acima de 7 dias."
+            f"O tempo médio de resolução é de **{mean_resolution.mean():.1f} dias**, com **{int((mean_resolution > 7).sum())} tickets** acima de 7 dias."
         )
 
     sla_overdue = int(pd.Series(df["sla_estourado"]).fillna(False).sum())
@@ -413,7 +413,7 @@ def generate_executive_summary(df: pd.DataFrame, colmap: ColumnMap) -> str:
 
     return (
         f"No período analisado para **{org_txt}**, foram registrados **{total} chamados**, com **{resolved} tickets concluídos** "
-        f"e **{backlog} ainda pendentes ou em acompanhamento**. O **SLA médio** foi de **{avg_txt}**. "
+        f"e **{backlog} ainda pendentes ou em acompanhamento**. O **tempo médio de resolução** foi de **{avg_txt}**. "
         f"A principal frente observada foi **{top_category_txt}**, enquanto o tipo de demanda mais recorrente foi **{top_type_txt}**. "
         f"Esse recorte permite direcionar discussões de causa raiz, treinamento operacional, revisão de integrações e aderência ao SLA."
     )
@@ -534,7 +534,7 @@ integration_pct = f"{(filtered['is_integration'].sum() / total) * 100:.1f}%" if 
 question_pct = f"{(filtered['is_question'].sum() / total) * 100:.1f}%" if total else "N/D"
 sla_breached = int(pd.Series(filtered["sla_estourado"]).fillna(False).sum())
 
-m1, m2, m3, m4, m5 = st.columns(5, gap="small")
+m1, m2, m3, m4, m5, m6, m7 = st.columns(7, gap="small")
 with m1:
     metric_card("Total de chamados", str(total))
 with m2:
@@ -542,8 +542,12 @@ with m2:
 with m3:
     metric_card("Backlog aberto", str(backlog))
 with m4:
-    metric_card("% Bugs", bug_pct)
+    metric_card("Em Hold", str(hold_count))
 with m5:
+    metric_card("SLA médio", mean_resolution_txt)
+with m6:
+    metric_card("% Bugs", bug_pct)
+with m7:
     metric_card("% Integração", integration_pct)
 
 st.markdown('<div class="section-title">KPIs executivos</div>', unsafe_allow_html=True)
