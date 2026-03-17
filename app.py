@@ -172,7 +172,7 @@ def detect_columns(df: pd.DataFrame) -> ColumnMap:
                 found = normalized[alias_norm]
                 break
         result[key] = found
-    return ColumnMap(**result)
+    return ColumnMap(result)
 
 
 def read_file(uploaded_file) -> pd.DataFrame:
@@ -350,7 +350,7 @@ def generate_insights(df: pd.DataFrame, colmap: ColumnMap) -> list[str]:
             top_cat = cat_counts.index[0]
             top_cat_n = int(cat_counts.iloc[0])
             insights.append(
-                f"A categoria com maior volume é **{top_cat}**, com **{top_cat_n} tickets** ({(top_cat_n / total) * 100:.1f}% do total)."
+                f"A categoria com maior volume é {top_cat}, com {top_cat_n} tickets ({(top_cat_n / total) * 100:.1f}% do total)."
             )
 
     if colmap.type and colmap.type in df.columns:
@@ -359,24 +359,24 @@ def generate_insights(df: pd.DataFrame, colmap: ColumnMap) -> list[str]:
             top_type = type_counts.index[0]
             top_type_n = int(type_counts.iloc[0])
             insights.append(
-                f"O tipo mais recorrente é **{top_type}**, com **{top_type_n} ocorrências**, ajudando a separar incidentes técnicos de dúvidas operacionais."
+                f"O tipo mais recorrente é {top_type}, com {top_type_n} ocorrências, ajudando a separar incidentes técnicos de dúvidas operacionais."
             )
 
     resolved = int(df["foi_resolvido"].sum())
     insights.append(
-        f"A taxa de resolução/encerramento no recorte é de **{(resolved / total) * 100:.1f}%**, com **{resolved} tickets concluídos** de **{total}**."
+        f"A taxa de resolução/encerramento no recorte é de {(resolved / total) * 100:.1f}%, com {resolved} tickets concluídos de {total}."
     )
 
     mean_resolution = df["tempo_resolucao_dias"].dropna()
     if len(mean_resolution) > 0:
         insights.append(
-            f"O tempo médio de resolução é de **{mean_resolution.mean():.1f} dias**, com **{int((mean_resolution > 7).sum())} tickets** acima de 7 dias."
+            f"O tempo médio de resolução é de {mean_resolution.mean():.1f} dias, com {int((mean_resolution > 7).sum())} tickets acima de 7 dias."
         )
 
     sla_overdue = int(pd.Series(df["sla_estourado"]).fillna(False).sum())
     if sla_overdue > 0:
         insights.append(
-            f"Foram identificados **{sla_overdue} tickets fora do SLA**, ponto importante para discussões de priorização e fluxo operacional."
+            f"Foram identificados {sla_overdue} tickets fora do SLA, ponto importante para discussões de priorização e fluxo operacional."
         )
 
     if colmap.subject and colmap.subject in df.columns:
@@ -384,7 +384,7 @@ def generate_insights(df: pd.DataFrame, colmap: ColumnMap) -> list[str]:
         recurrent = recurrent[recurrent >= 2]
         if len(recurrent) > 0:
             insights.append(
-                f"Há sinais de recorrência: o tema normalizado **“{recurrent.index[0]}”** apareceu **{int(recurrent.iloc[0])} vezes**."
+                f"Há sinais de recorrência: o tema normalizado “{recurrent.index[0]}” apareceu {int(recurrent.iloc[0])} vezes."
             )
 
     return insights
@@ -412,9 +412,9 @@ def generate_executive_summary(df: pd.DataFrame, colmap: ColumnMap) -> str:
         org_txt = str(df[colmap.organization].dropna().iloc[0])
 
     return (
-        f"No período analisado para **{org_txt}**, foram registrados **{total} chamados**, com **{resolved} tickets concluídos** "
-        f"e **{backlog} ainda pendentes ou em acompanhamento**. O **tempo médio de resolução** foi de **{avg_txt}**. "
-        f"A principal frente observada foi **{top_category_txt}**, enquanto o tipo de demanda mais recorrente foi **{top_type_txt}**. "
+        f"No período analisado para {org_txt}, foram registrados {total} chamados, com {resolved} tickets concluídos "
+        f"e {backlog} ainda pendentes ou em acompanhamento. O tempo médio de resolução foi de {avg_txt}. "
+        f"A principal frente observada foi {top_category_txt}, enquanto o tipo de demanda mais recorrente foi {top_type_txt}. "
         f"Esse recorte permite direcionar discussões de causa raiz, treinamento operacional, revisão de integrações e aderência ao SLA."
     )
 
@@ -426,11 +426,12 @@ with st.sidebar:
     st.header("Configurações")
     cliente = st.text_input("Nome do cliente", value="C.Vale")
     periodo_analisado = st.text_input("Período analisado", value="Fevereiro/2026")
+    logo_file = st.file_uploader("Upload da logo do cliente", type=["png","jpg","jpeg"]) 
     uploaded_file = st.file_uploader("Upload do arquivo Zendesk", type=["xlsx", "csv"])
     mostrar_base = st.checkbox("Mostrar base exploratória", value=True)
     top_n = st.slider("Top N para rankings", min_value=5, max_value=15, value=10)
     st.divider()
-    st.markdown("**Filtros rápidos**")
+    st.markdown("Filtros rápidos**")
     usar_periodo_automatico = st.checkbox("Usar período automático do arquivo", value=True)
     mostrar_diagnostico = st.checkbox("Mostrar diagnóstico de colunas", value=False)
 
@@ -526,13 +527,13 @@ st.markdown('<div class="section-title">Visão geral</div>', unsafe_allow_html=T
 total = len(filtered)
 resolved = int(filtered["foi_resolvido"].sum())
 backlog = int(filtered["esta_aberto"].sum())
-hold_count = int(filtered["em_hold"].sum())
+
 mean_resolution = filtered["tempo_resolucao_dias"].dropna().mean()
 mean_resolution_txt = f"{mean_resolution:.1f} dias" if pd.notna(mean_resolution) else "N/D"
 bug_pct = f"{(filtered['is_bug'].sum() / total) * 100:.1f}%" if total else "N/D"
 integration_pct = f"{(filtered['is_integration'].sum() / total) * 100:.1f}%" if total else "N/D"
 question_pct = f"{(filtered['is_question'].sum() / total) * 100:.1f}%" if total else "N/D"
-sla_breached = int(pd.Series(filtered["sla_estourado"]).fillna(False).sum())
+
 
 m1, m2, m3, m4, m5, m6, m7 = st.columns(7, gap="small")
 with m1:
@@ -541,8 +542,7 @@ with m2:
     metric_card("Resolvidos/encerrados", str(resolved))
 with m3:
     metric_card("Backlog aberto", str(backlog))
-with m4:
-    metric_card("Em Hold", str(hold_count))
+
 with m5:
     metric_card("SLA médio", mean_resolution_txt)
 with m6:
@@ -558,8 +558,7 @@ with k2:
     metric_card("Taxa de resolução", f"{(resolved / total) * 100:.1f}%" if total else "N/D")
 with k3:
     metric_card("Tickets > 7 dias", str(int((filtered["tempo_resolucao_dias"].fillna(-1) > 7).sum())))
-with k4:
-    metric_card("Fora do SLA", str(sla_breached))
+
 
 left, right = st.columns(2)
 with left:
@@ -607,30 +606,7 @@ with right2:
     ax.set_ylabel("Quantidade")
     st.pyplot(fig)
 
-left3, right3 = st.columns(2)
-with left3:
-    st.markdown('<div class="section-title">Tickets por responsável <span class="help-chip" title="Mostra a concentração de tickets por responsável, apoiando a leitura de distribuição operacional do atendimento.">?</span></div>', unsafe_allow_html=True)
-    if colmap.assignee and colmap.assignee in filtered.columns:
-        assignee_counts = filtered[colmap.assignee].fillna("Sem responsável").value_counts().head(top_n)
-        fig, ax = plt.subplots(figsize=(8, 4.2))
-        assignee_counts.sort_values().plot(kind="barh", ax=ax)
-        ax.set_xlabel("Quantidade")
-        ax.set_ylabel("")
-        st.pyplot(fig)
-    else:
-        st.warning("Coluna de responsável não encontrada.")
 
-with right3:
-    st.markdown('<div class="section-title">Principais assuntos <span class="help-chip" title="Exibe os assuntos mais frequentes do período, útil para detectar temas recorrentes e oportunidades de ação preventiva.">?</span></div>', unsafe_allow_html=True)
-    if colmap.subject and colmap.subject in filtered.columns:
-        subject_counts = filtered[colmap.subject].fillna("Sem assunto").value_counts().head(top_n)
-        fig, ax = plt.subplots(figsize=(8, 4.2))
-        subject_counts.sort_values().plot(kind="barh", ax=ax)
-        ax.set_xlabel("Quantidade")
-        ax.set_ylabel("")
-        st.pyplot(fig)
-    else:
-        st.warning("Coluna de assunto não encontrada.")
 
 st.markdown('<div class="section-title">Evolução diária de abertura <span class="help-chip" title="Apresenta a variação diária de tickets abertos no período, ajudando a identificar picos operacionais e eventos concentrados.">?</span></div>', unsafe_allow_html=True)
 if colmap.created_at and colmap.created_at in filtered.columns:
