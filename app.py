@@ -108,9 +108,9 @@ ALIASES = {
     "requester": ["requester name", "requester", "solicitante"],
     "assignee": ["assignee name", "assignee", "responsável", "owner"],
     "csm": ["csm", "customer success manager", "gerente da conta"],
-    "created_at": ["ticket created - date", "ticket created date", "created at", "created_at", "created"],
+    "created_at": ["ticket created - date", "created at", "created_at", "created"],
     "updated_at": ["ticket updated - date", "updated at", "updated_at", "updated"],
-    "solved_at": ["ticket solved - date", "ticket solved date", "solved at", "solved_at", "resolved at", "resolution date"],
+    "solved_at": ["ticket solved - date", "solved at", "solved_at", "resolved at", "resolution date"],
     "due_at": ["ticket due - date", "due date", "due_at"],
     "satisfaction": ["ticket satisfaction rating", "ticket satisfaction", "satisfaction", "csat"],
     "satisfaction_score": ["% satisfaction score", "satisfaction score", "csat %"],
@@ -182,7 +182,7 @@ def clean_text_series(series: pd.Series) -> pd.Series:
     return cleaned
 
 
-def normalize_status_value(value):
+def normalize_status_value(value: str):
     if pd.isna(value):
         return np.nan
     txt = str(value).strip().lower()
@@ -239,37 +239,20 @@ def prepare_dataframe(df: pd.DataFrame, colmap: ColumnMap) -> pd.DataFrame:
     out["esta_aberto"] = out["status_padronizado"].isin(["New", "Open", "Pending", "Hold"])
     out["em_hold"] = out["status_padronizado"].eq("Hold")
 
-    # Tempo médio de resolução em dias
-    if (
-        colmap.created_at
-        and colmap.solved_at
-        and colmap.created_at in out.columns
-        and colmap.solved_at in out.columns
-    ):
-        out["tempo_resolucao_dias"] = (
-            (out[colmap.solved_at] - out[colmap.created_at]).dt.total_seconds() / 86400
-        ).round(2)
-
-        # SLA médio em horas, usando exatamente o mesmo cálculo solicitado:
-        # Ticket solved - Date - Ticket created - Date
-        out["sla_medio_horas"] = (
-            (out[colmap.solved_at] - out[colmap.created_at]).dt.total_seconds() / 3600
-        ).round(2)
+    if colmap.created_at and colmap.solved_at and colmap.created_at in out.columns and colmap.solved_at in out.columns:
+        out["tempo_resolucao_dias"] = ((out[colmap.solved_at] - out[colmap.created_at]).dt.total_seconds() / 86400).round(2)
     else:
         out["tempo_resolucao_dias"] = np.nan
-        out["sla_medio_horas"] = np.nan
 
-    if (
-        colmap.created_at
-        and colmap.updated_at
-        and colmap.created_at in out.columns
-        and colmap.updated_at in out.columns
-    ):
-        out["idade_ticket_dias"] = (
-            (out[colmap.updated_at] - out[colmap.created_at]).dt.total_seconds() / 86400
-        ).round(2)
+    if colmap.created_at and colmap.updated_at and colmap.created_at in out.columns and colmap.updated_at in out.columns:
+        out["idade_ticket_dias"] = ((out[colmap.updated_at] - out[colmap.created_at]).dt.total_seconds() / 86400).round(2)
     else:
         out["idade_ticket_dias"] = np.nan
+
+    if colmap.created_at and colmap.due_at and colmap.created_at in out.columns and colmap.due_at in out.columns:
+        out["sla_medio_horas"] = ((out[colmap.due_at] - out[colmap.created_at]).dt.total_seconds() / 3600).round(2)
+    else:
+        out["sla_medio_horas"] = np.nan
 
     out["aging_bucket"] = pd.cut(
         out["tempo_resolucao_dias"],
@@ -321,7 +304,6 @@ def metric_card(label: str, value: str):
 def generate_insights(df: pd.DataFrame, colmap: ColumnMap) -> list[str]:
     insights = []
     total = len(df)
-
     if total == 0:
         return ["Nenhum ticket encontrado no período ou nos filtros aplicados."]
 
@@ -353,7 +335,7 @@ def generate_insights(df: pd.DataFrame, colmap: ColumnMap) -> list[str]:
     sla_mean = df["sla_medio_horas"].dropna()
     if len(sla_mean) > 0:
         insights.append(
-            f"O SLA médio calculado com base em Ticket solved - Date menos Ticket created - Date é de {sla_mean.mean():.1f} horas."
+            f"O SLA médio calculado pela diferença entre criação e due date dos tickets é de {sla_mean.mean():.1f} horas."
         )
 
     if colmap.subject and colmap.subject in df.columns:
@@ -371,10 +353,8 @@ def generate_executive_summary(df: pd.DataFrame, colmap: ColumnMap) -> str:
     total = len(df)
     resolved = int(df["foi_resolvido"].sum())
     backlog = total - resolved
-
     avg_resolution = df["tempo_resolucao_dias"].dropna().mean()
-    avg_resolution_txt = f"{avg_resolution:.1f} dias" if pd.notna(avg_resolution) else "não disponível"
-
+    avg_txt = f"{avg_resolution:.1f} dias" if pd.notna(avg_resolution) else "não disponível"
     avg_sla = df["sla_medio_horas"].dropna().mean()
     avg_sla_txt = f"{avg_sla:.1f} horas" if pd.notna(avg_sla) else "não disponível"
 
@@ -394,7 +374,7 @@ def generate_executive_summary(df: pd.DataFrame, colmap: ColumnMap) -> str:
 
     return (
         f"No período analisado para {org_txt}, foram registrados {total} chamados, com {resolved} tickets concluídos e {backlog} ainda pendentes ou em acompanhamento. "
-        f"O tempo médio de resolução foi de {avg_resolution_txt}. A principal frente observada foi {top_category_txt}, enquanto o tipo de demanda mais recorrente foi {top_type_txt}. "
+        f"O tempo médio de resolução foi de {avg_txt}. A principal frente observada foi {top_category_txt}, enquanto o tipo de demanda mais recorrente foi {top_type_txt}. "
         f"O SLA médio calculado para o período foi de {avg_sla_txt}. Esse recorte permite direcionar discussões de causa raiz, treinamento operacional e revisão de integrações."
     )
 
@@ -418,20 +398,10 @@ def build_onepage_pdf(cliente: str, periodo: str, resumo: str, plano_acao: str, 
         fig.text(0.08, 0.95, "One-page executivo | Análise de Chamados", fontsize=18, fontweight="bold")
         fig.text(0.08, 0.92, f"Cliente: {cliente}", fontsize=11)
         fig.text(0.08, 0.90, f"Período analisado: {periodo}", fontsize=11)
-
         fig.text(0.08, 0.84, "Resumo executivo", fontsize=14, fontweight="bold")
         fig.text(0.08, 0.82, resumo, fontsize=10.5, va="top", wrap=True)
-
         fig.text(0.08, 0.52, "Plano de ação", fontsize=14, fontweight="bold")
-        fig.text(
-            0.08,
-            0.50,
-            plano_acao.strip() if plano_acao.strip() else "Plano de ação não preenchido.",
-            fontsize=10.5,
-            va="top",
-            wrap=True,
-        )
-
+        fig.text(0.08, 0.50, plano_acao.strip() if plano_acao.strip() else "Plano de ação não preenchido.", fontsize=10.5, va="top", wrap=True)
         fig.text(0.08, 0.06, "Gerado automaticamente pela ferramenta interna de análise de chamados.", fontsize=9)
         plt.axis("off")
         pdf.savefig(fig, bbox_inches="tight")
@@ -451,7 +421,6 @@ with st.sidebar:
     logo_cliente = st.file_uploader("Upload da logo do cliente", type=["png", "jpg", "jpeg"])
     mostrar_base = st.checkbox("Mostrar base exploratória", value=True)
     top_n = st.slider("Top N para rankings", min_value=5, max_value=15, value=10)
-
     st.divider()
     st.markdown("**Acesso**")
     senha_digitada = st.text_input("Senha do projeto", type="password")
@@ -459,7 +428,6 @@ with st.sidebar:
     if senha_digitada != senha_correta:
         st.warning("Digite a senha correta para acessar o projeto.")
         st.stop()
-
     st.divider()
     st.markdown("**Filtros rápidos**")
     usar_periodo_automatico = st.checkbox("Usar período automático do arquivo", value=True)
@@ -478,12 +446,7 @@ except Exception as e:
 colmap = detect_columns(raw_df)
 df = prepare_dataframe(raw_df, colmap)
 
-if (
-    usar_periodo_automatico
-    and colmap.created_at
-    and colmap.created_at in df.columns
-    and df[colmap.created_at].notna().any()
-):
+if usar_periodo_automatico and colmap.created_at and colmap.created_at in df.columns and df[colmap.created_at].notna().any():
     data_min = df[colmap.created_at].min()
     data_max = df[colmap.created_at].max()
     if pd.notna(data_min) and pd.notna(data_max):
@@ -520,19 +483,15 @@ if mostrar_diagnostico:
 
 with st.expander("Filtros", expanded=True):
     f1, f2, f3, f4, f5 = st.columns(5)
-
     with f1:
         status_options = sorted(df["status_padronizado"].dropna().unique().tolist())
         status_sel = st.multiselect("Status", status_options, default=status_options)
-
     with f2:
         type_options = sorted(safe_series(df, colmap.type).dropna().unique().tolist())
         type_sel = st.multiselect("Tipo", type_options, default=type_options)
-
     with f3:
         category_options = sorted(safe_series(df, colmap.category).dropna().unique().tolist())
         category_sel = st.multiselect("Categoria", category_options, default=category_options)
-
     with f4:
         if colmap.created_at and colmap.created_at in df.columns and df[colmap.created_at].notna().any():
             data_min_filtro = df[colmap.created_at].min().date()
@@ -545,7 +504,6 @@ with st.expander("Filtros", expanded=True):
             )
         else:
             intervalo_datas = None
-
     with f5:
         if colmap.channel and colmap.channel in df.columns:
             channel_options = sorted(safe_series(df, colmap.channel).dropna().unique().tolist())
@@ -562,13 +520,7 @@ if colmap.category and category_sel:
     filtered = filtered[filtered[colmap.category].isin(category_sel)]
 if colmap.channel and channel_sel:
     filtered = filtered[filtered[colmap.channel].isin(channel_sel)]
-if (
-    intervalo_datas
-    and colmap.created_at
-    and colmap.created_at in filtered.columns
-    and isinstance(intervalo_datas, tuple)
-    and len(intervalo_datas) == 2
-):
+if intervalo_datas and colmap.created_at and colmap.created_at in filtered.columns and isinstance(intervalo_datas, tuple) and len(intervalo_datas) == 2:
     data_inicio, data_fim = intervalo_datas
     filtered = filtered[filtered[colmap.created_at].dt.date.between(data_inicio, data_fim)]
 
@@ -614,10 +566,7 @@ with k4:
 
 left, right = st.columns(2)
 with left:
-    st.markdown(
-        '<div class="section-title">Chamados por status <span class="help-chip" title="Mostra a distribuição dos tickets por status padronizado, facilitando a leitura entre backlog, hold e tickets concluídos.">?</span></div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="section-title">Chamados por status <span class="help-chip" title="Mostra a distribuição dos tickets por status padronizado, facilitando a leitura entre backlog, hold e tickets concluídos.">?</span></div>', unsafe_allow_html=True)
     status_counts = filtered["status_padronizado"].fillna("Sem status").value_counts()
     fig, ax = plt.subplots(figsize=(8, 4.2))
     status_counts.plot(kind="bar", ax=ax)
@@ -627,10 +576,7 @@ with left:
     st.pyplot(fig)
 
 with right:
-    st.markdown(
-        '<div class="section-title">Chamados por categoria <span class="help-chip" title="Mostra quais categorias concentram mais chamados no período, ajudando a identificar causas raiz e frentes prioritárias de atuação.">?</span></div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="section-title">Chamados por categoria <span class="help-chip" title="Mostra quais categorias concentram mais chamados no período, ajudando a identificar causas raiz e frentes prioritárias de atuação.">?</span></div>', unsafe_allow_html=True)
     if colmap.category and colmap.category in filtered.columns:
         cat_counts = filtered[colmap.category].fillna("Sem categoria").value_counts().head(top_n)
         fig, ax = plt.subplots(figsize=(8, 4.2))
@@ -643,10 +589,7 @@ with right:
 
 left2, right2 = st.columns(2)
 with left2:
-    st.markdown(
-        '<div class="section-title">Chamados por tipo <span class="help-chip" title="Separa os tickets entre bugs, dúvidas operacionais e solicitações, ajudando a entender o perfil da demanda do cliente.">?</span></div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="section-title">Chamados por tipo <span class="help-chip" title="Separa os tickets entre bugs, dúvidas operacionais e solicitações, ajudando a entender o perfil da demanda do cliente.">?</span></div>', unsafe_allow_html=True)
     if colmap.type and colmap.type in filtered.columns:
         type_counts = filtered[colmap.type].fillna("Sem tipo").value_counts()
         fig, ax = plt.subplots(figsize=(8, 4.2))
@@ -659,10 +602,7 @@ with left2:
         st.warning("Coluna de tipo não encontrada.")
 
 with right2:
-    st.markdown(
-        '<div class="section-title">Aging de resolução <span class="help-chip" title="Agrupa os tickets resolvidos por faixa de tempo de resolução, evidenciando chamados rápidos e casos com maior demora.">?</span></div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="section-title">Aging de resolução <span class="help-chip" title="Agrupa os tickets resolvidos por faixa de tempo de resolução, evidenciando chamados rápidos e casos com maior demora.">?</span></div>', unsafe_allow_html=True)
     aging = filtered["aging_bucket"].value_counts().reindex(["0–1 dia", "2–3 dias", "4–7 dias", "8+ dias"])
     fig, ax = plt.subplots(figsize=(8, 4.2))
     aging.plot(kind="bar", ax=ax)
@@ -670,10 +610,7 @@ with right2:
     ax.set_ylabel("Quantidade")
     st.pyplot(fig)
 
-st.markdown(
-    '<div class="section-title">Evolução diária de abertura <span class="help-chip" title="Apresenta a variação diária de tickets abertos no período, ajudando a identificar picos operacionais e eventos concentrados.">?</span></div>',
-    unsafe_allow_html=True,
-)
+st.markdown('<div class="section-title">Evolução diária de abertura <span class="help-chip" title="Apresenta a variação diária de tickets abertos no período, ajudando a identificar picos operacionais e eventos concentrados.">?</span></div>', unsafe_allow_html=True)
 if colmap.created_at and colmap.created_at in filtered.columns:
     timeline = filtered.dropna(subset=[colmap.created_at]).groupby(filtered[colmap.created_at].dt.date).size()
     fig, ax = plt.subplots(figsize=(12, 4))
@@ -684,29 +621,23 @@ if colmap.created_at and colmap.created_at in filtered.columns:
 else:
     st.warning("Coluna de data de criação não encontrada.")
 
-st.markdown(
-    '<div class="section-title">Insights <span class="help-chip" title="Síntese textual gerada automaticamente com os principais achados do período, pronta para apoiar apresentações executivas.">?</span></div>',
-    unsafe_allow_html=True,
-)
+st.markdown('<div class="section-title">SLA <span class="help-chip" title="Apresenta o SLA médio calculado a partir da diferença entre criação e due date dos tickets no período analisado.">?</span></div>', unsafe_allow_html=True)
+s1, s2 = st.columns(2)
+with s1:
+    metric_card("SLA médio", f"{avg_sla:.1f} h" if pd.notna(avg_sla) else "N/D")
+with s2:
+    metric_card("Tickets com due date", str(int(filtered["sla_medio_horas"].notna().sum())))
+
+st.markdown('<div class="section-title">Insights <span class="help-chip" title="Síntese textual gerada automaticamente com os principais achados do período, pronta para apoiar apresentações executivas.">?</span></div>', unsafe_allow_html=True)
 for insight in generate_insights(filtered, colmap):
     st.markdown(f'<div class="insight-box">{insight}</div>', unsafe_allow_html=True)
 
-st.markdown(
-    '<div class="section-title">Resumo executivo <span class="help-chip" title="Texto consolidado para usar em relatórios e apresentações ao cliente, resumindo volume, perfil dos chamados e pontos de atenção.">?</span></div>',
-    unsafe_allow_html=True,
-)
+st.markdown('<div class="section-title">Resumo executivo <span class="help-chip" title="Texto consolidado para usar em relatórios e apresentações ao cliente, resumindo volume, perfil dos chamados e pontos de atenção.">?</span></div>', unsafe_allow_html=True)
 summary_text = generate_executive_summary(filtered, colmap)
 st.text_area("Texto pronto para apresentação", value=summary_text, height=180)
 
-st.markdown(
-    '<div class="section-title">Plano de ação <span class="help-chip" title="Campo livre para registrar encaminhamentos, responsáveis e próximos passos combinados para o cliente.">?</span></div>',
-    unsafe_allow_html=True,
-)
-plano_acao = st.text_area(
-    "Plano de ação do período",
-    height=180,
-    placeholder="Ex.: Revisar integrações críticas, alinhar treinamento com usuários-chave, acompanhar tickets de lentidão...",
-)
+st.markdown('<div class="section-title">Plano de ação <span class="help-chip" title="Campo livre para registrar encaminhamentos, responsáveis e próximos passos combinados para o cliente.">?</span></div>', unsafe_allow_html=True)
+plano_acao = st.text_area("Plano de ação do período", height=180, placeholder="Ex.: Revisar integrações críticas, alinhar treinamento com usuários-chave, acompanhar tickets de lentidão...")
 
 pdf_bytes = build_onepage_pdf(cliente, periodo_exibicao, summary_text, plano_acao, logo_cliente)
 st.download_button(
@@ -717,10 +648,7 @@ st.download_button(
 )
 
 if mostrar_base:
-    st.markdown(
-        '<div class="section-title">Base exploratória <span class="help-chip" title="Tabela detalhada dos tickets após tratamento e filtros aplicados, útil para validação e análises mais profundas.">?</span></div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="section-title">Base exploratória <span class="help-chip" title="Tabela detalhada dos tickets após tratamento e filtros aplicados, útil para validação e análises mais profundas.">?</span></div>', unsafe_allow_html=True)
     st.dataframe(filtered, use_container_width=True, height=420)
 
 buffer = io.BytesIO()
